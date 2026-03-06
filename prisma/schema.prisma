@@ -1,0 +1,248 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Freelance Copilot relations
+  jobs             Job[]
+  proposals        Proposal[]
+  workspaces       Workspace[]
+  messages         Message[]
+  proposalTemplates ProposalTemplate[]
+  contracts        Contract[]
+  invoices         Invoice[]
+  profile          UserProfile?
+
+  @@map("users")
+}
+
+// UserProfile - Skills and preferences for job matching
+model UserProfile {
+  id              String   @id @default(cuid())
+  
+  // Core skills (comma-separated)
+  skills          String?  // "React,TypeScript,Node.js,Python"
+  
+  // Preferred categories
+  categories      String?  // "frontend,backend,fullstack,devops,data"
+  
+  // Hourly rate preference
+  minHourlyRate   Float?
+  maxHourlyRate   Float?
+  
+  // Job preferences
+  jobTypes        String?  // "fixed,hourly"
+  availability    String?  // "fulltime,parttime,contract"
+  
+  // Experience level
+  experienceLevel String?  // "junior,mid,senior,expert"
+  
+  // Past wins - what has worked before
+  successfulProjects String?  @db.Text // JSON array of successful project types
+  winRate           Float?   // Historical win rate
+  
+  // Preferred sources
+  preferredSources String?  // "upwork,linkedin,toptal"
+  
+  // AI summary of profile for matching
+  aiSummary       String?  @db.Text
+  
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("user_profiles")
+}
+
+// Job - Freelance job listing
+model Job {
+  id          String   @id @default(cuid())
+  source      String   // upwork, linkedin, indeed, manual
+  sourceId    String?  // Original ID from source
+  title       String
+  description String   @db.Text
+  budget      String?  // "500-1000", "fixed", etc.
+  url         String?
+  skills      String?  // Comma-separated
+  status      String   @default("active") // active, archived
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  proposals   Proposal[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@map("jobs")
+}
+
+// Proposal - Job proposal
+model Proposal {
+  id          String   @id @default(cuid())
+  content     String   @db.Text // The proposal text
+  status      String   @default("draft") // draft, submitted, pending, won, lost
+  price       Float?
+  submittedAt DateTime?
+  wonAt       DateTime?
+  
+  // Follow-up tracking
+  lastFollowUpAt DateTime?  // When was the last follow-up sent
+  followUpCount  Int        @default(0) // Number of follow-ups sent
+  
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  workspace   Workspace?
+  contracts   Contract[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@map("proposals")
+}
+
+// Workspace - Execution workspace for a won proposal
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  
+  proposalId  String   @unique
+  proposal    Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  messages    Message[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("workspaces")
+}
+
+model ProposalTemplate {
+  id          String   @id @default(cuid())
+  name        String   // Template name like "Technical Proposal", "UX Design Proposal"
+  description String?  // Brief description of when to use this template
+  content     String   @db.Text // The template content with placeholders
+  category    String?  // e.g., "technical", "creative", "consulting"
+  
+  // Usage tracking
+  useCount    Int      @default(0) // How many times this template has been used
+  successCount Int     @default(0) // How many times used in winning proposals
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("proposal_templates")
+}
+
+// Message - Chat message in workspace
+model Message {
+  id          String   @id @default(cuid())
+  content     String   @db.Text
+  role        String   // user, assistant
+  
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@map("messages")
+}
+
+// Contract - Client contract
+model Contract {
+  id            String    @id @default(cuid())
+  title         String
+  description   String?   @db.Text
+  clientName    String?
+  clientEmail   String?
+  status        String    @default("draft") // draft, sent, signed, active, completed, cancelled
+  startDate     DateTime?
+  endDate       DateTime?
+  value         Float?    // Total contract value
+  terms         String?   @db.Text // Contract terms/conditions
+  
+  stripeInvoiceId String?
+  stripePaymentStatus String? // pending, paid, failed
+  
+  proposalId    String?
+  proposal      Proposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  invoices      Invoice[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@map("contracts")
+}
+
+// Invoice - Invoice for contract
+model Invoice {
+  id            String    @id @default(cuid())
+  invoiceNumber String    // INV-001, INV-002, etc.
+  description   String?   @db.Text
+  amount        Float
+  status        String    @default("draft") // draft, sent, paid, overdue, cancelled
+  dueDate       DateTime?
+  paidAt        DateTime?
+  
+  stripeInvoiceId   String?
+  stripePaymentIntentId String?
+  stripePaymentStatus String? // pending, paid, failed
+  
+  contractId    String
+  contract      Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([contractId])
+  @@index([userId, status])
+  @@map("invoices")
+}
